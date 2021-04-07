@@ -1,0 +1,13 @@
+build
+main
+hello
+.cache
+
+*.out
+*.o
+
+test
+*_old*
+*OLD*
+
+notes.txt
