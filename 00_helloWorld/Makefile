@@ -12,3 +12,7 @@ all:
 #	#-lcudart
 #	#-lcublas
 #	-fopenmp -O3 -Wextra -std=c++11
+
+
+clean:
+	rm -rf hello *.out
