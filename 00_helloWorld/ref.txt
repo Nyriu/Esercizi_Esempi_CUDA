@@ -1,0 +1,3 @@
+https://cuda-tutorial.readthedocs.io/en/latest/tutorials/tutorial01/
+
+https://stackoverflow.com/questions/9421108/how-can-i-compile-cuda-code-then-link-it-to-a-c-project
