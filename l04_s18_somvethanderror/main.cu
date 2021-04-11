@@ -43,6 +43,7 @@ int main( void ) {
   add<<<NumBlocks, NumThPerBlock>>>(dev_a, dev_b, dev_c);
 
   // TODO wait threads completion
+  //HANDLE_ERROR(cudaDeviceSynchronize());
 
   //retrieve the result from device dev_c into c
   HANDLE_ERROR(cudaMemcpy(c, dev_c, N*sizeof(int), cudaMemcpyDeviceToHost));

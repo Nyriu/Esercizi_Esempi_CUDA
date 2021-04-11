@@ -33,8 +33,8 @@ int main( void ) {
   cudaMemcpy(dev_b, b, N*sizeof(int), cudaMemcpyHostToDevice);
 
   add<<<NumBlocks, NumThPerBlock>>>(dev_a, dev_b, dev_c);
-
-  // TODO wait threads completion
+  // Wait threads completion
+  cudaDeviceSynchronize();
 
   //retrieve the result from device dev_c into c
   cudaMemcpy(c, dev_c, N*sizeof(int), cudaMemcpyDeviceToHost);
