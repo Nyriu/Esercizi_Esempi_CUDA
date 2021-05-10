@@ -2,6 +2,7 @@ build
 main
 hello
 .cache
+refs
 
 *.out
 *.o

@@ -1,5 +1,6 @@
+
 all:
-	nvcc -std=c++11 hello.cu -o hello
+	/opt/cuda/bin/nvcc -std=c++11 hello.cu -o hello
 
 #hello.o: hello.cu
 #	/opt/cuda/bin/nvcc -std=c++11 -c hello.cu
