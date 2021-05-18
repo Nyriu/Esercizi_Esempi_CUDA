@@ -12,4 +12,5 @@
 
 ## Per Compilare!
 * ricordarsi di cambiare compute e arch nei Makefile
-  * io uso compute 5.0
+  * io *usavo* compute 5.0
+  * ora ho una scheda compute 7.5, quindi ho commentato le righe per compute 5.0

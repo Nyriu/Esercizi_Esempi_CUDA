@@ -3,7 +3,7 @@ make
 #sleep 1s
 #echo "----------------- v1 1 -----------------"
 time ./main
-nvprof ./main
+/opt/cuda/bin/nvprof ./main
 #sleep 1s
 #echo "----------------- v1 2 -----------------"
 #time ./main
@@ -17,7 +17,7 @@ make
 #sleep 1s
 #echo "----------------- v2 1 -----------------"
 time ./main
-nvprof ./main
+/opt/cuda/bin/nvprof ./main
 #sleep 1s
 #echo "----------------- v2 2 -----------------"
 #time ./main
