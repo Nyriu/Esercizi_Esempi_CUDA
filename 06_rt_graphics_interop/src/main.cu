@@ -3,7 +3,12 @@
 #include <iostream>
 #include <stdlib.h>
 
-#include <GL/glut.h>
+#ifdef __clang__
+#include <__clang_cuda_math.h>
+#include <__clang_cuda_builtin_vars.h>
+#endif
+
+#include <GLFW/glfw3.h>
 #include <cuda.h>
 #include <cuda_gl_interop.h>
 
@@ -17,13 +22,18 @@ static void HandleError( cudaError_t err, const char *file, int line) {
 #define HANDLE_ERROR(err)(HandleError(err, __FILE__, __LINE__))
 
 
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+}
+
 
 // Globals
 #define DIM 512
 
 GLuint bufferObj;
 cudaGraphicsResource *resource;
-
 
 
 __global__ void kernel(uchar4 *ptr) {
@@ -45,33 +55,6 @@ __global__ void kernel(uchar4 *ptr) {
   ptr[offset].w = 255;
 }
 
-static void draw_func( void ){
-  glDrawPixels(DIM, DIM, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-  glutSwapBuffers();
-}
-
-static void key_func(unsigned char key, int x, int y){
-  switch(key) {
-    case 27: // ESC
-      // clean OpenGL and CUDA
-      HANDLE_ERROR(
-          cudaGraphicsUnregisterResource(resource)
-          );
-      glBindBuffer( GL_PIXEL_UNPACK_BUFFER_ARB, 0);
-      glDeleteBuffers(1, &bufferObj);
-      exit(0);
-  }
-}
-
-
-
-
-
-
-
-
-
-
 
 int main(int argc, char **argv) {
   cudaDeviceProp prop;
@@ -87,12 +70,30 @@ int main(int argc, char **argv) {
   //    cudaGLSetGLDevice(dev) // deprecated
   //    );
 
-  // these GLUT calls need to be made before the other GL calls
-  glutInit(&argc, argv);
-  glutInitDisplayMode( GLUT_DOUBLE | GLUT_RGBA );
-  glutInitWindowSize( DIM, DIM );
-  glutCreateWindow( "Interop Example" );
 
+	if (!glfwInit()) exit(EXIT_FAILURE);
+	if (atexit(glfwTerminate)) {
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
+
+	GLFWwindow* window;
+	window = glfwCreateWindow(DIM, DIM, "GLFW Window", NULL, NULL);
+	if (!window) exit(EXIT_FAILURE);
+
+  glfwSetKeyCallback(window, key_callback);
+
+	glfwMakeContextCurrent(window);
+	glfwSwapInterval(1);
+
+
+  std::cout << glGetString(GL_VENDOR) << std::endl;
+  std::cout << glGetString(GL_RENDERER) << std::endl;
+
+  // TODO ARB or not ARB
+	//glGenBuffers(1, &pbo);
+	//glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+	//glBufferData(GL_PIXEL_UNPACK_BUFFER, 4 * sizeof(GLubyte)*WIDTH*HEIGHT, NULL, GL_DYNAMIC_DRAW);
   glGenBuffers(1, &bufferObj);
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, bufferObj);
   glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, DIM*DIM*4, NULL, GL_DYNAMIC_DRAW_ARB);
@@ -126,10 +127,24 @@ int main(int argc, char **argv) {
       cudaGraphicsUnmapResources(1, &resource, NULL)
       );
 
-  // set up GLUT and kick off main loop
-  glutKeyboardFunc(key_func);
-  glutDisplayFunc(draw_func);
-  glutMainLoop();
+	while (!glfwWindowShouldClose(window)) {
+		//kernelUpdate(WIDTH, HEIGHT);
+		glDrawPixels(DIM, DIM, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+		glfwSwapBuffers(window);
+
+    // Poll for and process events
+    glfwPollEvents();
+	}
+
+
+
+  HANDLE_ERROR(
+      cudaGraphicsUnregisterResource(resource)
+      );
+  glBindBuffer( GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  glDeleteBuffers(1, &bufferObj);
+
+  glfwTerminate();
 
   return 0;
 }
