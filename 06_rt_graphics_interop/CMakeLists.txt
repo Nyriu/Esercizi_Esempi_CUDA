@@ -6,13 +6,19 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
  
 include(CTest)
  
-find_package(CUDA REQUIRED)
-find_package(glfw3 REQUIRED)
-#set(OpenGL_GL_PREFERENCE "LEGACY")
 set(OpenGL_GL_PREFERENCE "GLVND")
+#set(OpenGL_GL_PREFERENCE "LEGACY")
 find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
+#message(STATUS "GLM included at ${GLM_INCLUDE_DIR}")
+find_package(CUDA REQUIRED)
+
 
 add_compile_options(-g -Wall -Wextra ) # -pedantic) # -Werror)
+# Suppress warning of this type
+# /usr/include/glm/detail/type_vec3.hpp(176): warning: __device__ annotation is ignored on a function("operator=") that is explicitly defaulted on its first declaration
+add_compile_options(-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored)
 
 #add_library(particles STATIC
 #  randomize.cpp
@@ -47,8 +53,10 @@ add_executable(main ${SOURCES})
 #set_property(TARGET main PROPERTY CUDA_ARCHITECTURES 50 75)
 set_property(TARGET main PROPERTY CUDA_ARCHITECTURES 75)
 set_target_properties( main
-                       PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-target_link_libraries(main glfw GL)
+  PROPERTIES CUDA_SEPARABLE_COMPILATION ON
+  )
+target_link_libraries(main PRIVATE glm glfw GL)
+
 #set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_50,code=sm_50") # works but bad solution
 # TODO make work the one below and remove the one above
 #target_compile_options(particle_test PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:"-gencode arch=compute_50,code=sm_50">) 
