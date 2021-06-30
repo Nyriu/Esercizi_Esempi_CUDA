@@ -1,4 +1,3 @@
-#include <glm/common.hpp>
 #define GL_GLEXT_PROTOTYPES
 
 #include <iostream>
@@ -11,7 +10,8 @@
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-//#include <glm/vec3.hpp>
+#include <glm/common.hpp>
+#include <glm/vec3.hpp>
 #include <glm/fwd.hpp>
 #include <glm/geometric.hpp>
 
@@ -34,6 +34,8 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+constexpr float infinity = std::numeric_limits<float>::max();
+
 
 // Aliases
 using vec3   = glm::vec3;
@@ -41,9 +43,10 @@ using point3 = glm::vec3;
 using color  = glm::vec3;
 
 // Globals
-#define IMG_H 512/4
-#define IMG_W 512/4
+#define IMG_H 512
+#define IMG_W 512
 
+// TODO
 //#define IMG_H 1080
 //#define IMG_W IMG_H*16/9;
 
@@ -53,13 +56,26 @@ class Sphere {
     float radius_;
     point3 center_;
 
+    static constexpr float gradient_delta_ = 10e-5; // delta used to compute gradient (normal)
+
   public:
     Sphere(const float& radius) : radius_(radius) {
       center_ = point3(0);
     }
 
-    float getDist(const point3& point) const {
+    __device__ float getDist(const point3& point) const {
       return glm::length(point) - radius_;
+    }
+
+    __device__ vec3 getNormalAt(const point3& p) const {
+      return glm::normalize(vec3(
+            getDist(
+              p+vec3(gradient_delta_,0,0)) - getDist(p + vec3(-gradient_delta_,0,0)),
+            getDist(
+              p+vec3(0,gradient_delta_,0)) - getDist(p + vec3(0,-gradient_delta_,0)),
+            getDist(
+              p+vec3(0,0,gradient_delta_)) - getDist(p + vec3(0,0,-gradient_delta_))
+            ));
     }
 };
 
@@ -72,7 +88,7 @@ class Ray {
     __device__ Ray(const point3& origin, const vec3& direction) :
       orig_(origin), dir_(glm::normalize(direction)) {}
 
-    const point3 at(float t) const {
+   __device__ const point3 at(float t) const {
       return orig_ + t*dir_;
     }
 };
@@ -94,9 +110,9 @@ class Camera {
     }
 
     __device__ Ray generate_ray(float u, float v) const { // input NDC Coords
-      // Put coords in [-1,1]
-      float su = 2 * u - 1; // Screen Coord
-      float sv = 1 - 2 * v; // Screen Coord (flip y axis)
+      // Put coords in [-1,1] // (-1,-1) is bottom-left
+      float su = u * 2 - 1; // Screen Coord
+      float sv = v * 2 - 1; // Screen Coord
 
       // Aspect Ratio
       su *= aspect_; // x in [-asp ratio, asp ratio]
@@ -114,7 +130,8 @@ class Camera {
       // From ScreenCoords to WorldCoords
       point3 p    = point3(su,sv,center_.z - 1) ;
       point3 orig = center_;
-      return Ray(orig, glm::normalize((orig - p)));
+      vec3 dir = glm::normalize((p - orig));
+      return Ray(orig, dir);
     }
 };
 
@@ -122,15 +139,128 @@ class Camera {
 class Tracer {
   public:
     __device__ color trace(const Ray *r, const Sphere *sph) const {
-      //TODO sphere tracing
-      return color((float).25);
+      //return color( (r->dir_.x + 1)+.5, (r->dir_.y + 1)+.5, (r->dir_.z + 1)+.5);
+      float t = sphereTrace(r,sph);
+
+      if (t >= max_distance_) // Background
+        //return color(0);
+        return color((r->dir_.x + 1)+.5, (r->dir_.y + 1)+.5, (r->dir_.z + 1)+.5);
+        //return color((r->dir_.x + 1)+.5,0,0);
+        //return color(0,(r->dir_.y + 1)+.5,0);
+      point3 p = r->at(t);
+      vec3   d = r->dir_;
+      color c = shade(p, d, sph);
+      return c;
     };
   private:
+    static constexpr float max_distance_= 100;
+    static constexpr float hit_threshold_ = 10e-6; // min distance to signal a ray-surface hit
+
+    __device__ float sphereTrace(const Ray *r, const Sphere *sph) const {
+      // // DEBUG STUFF
+      // float u = ((threadIdx.x + blockIdx.x * blockDim.x) + .5) / ((float) IMG_W -1); // NDC Coord
+      // float v = ((threadIdx.y + blockIdx.y * blockDim.y) + .5) / ((float) IMG_H -1); // NDC Coord
+      // bool enable_print = (u == 0.5) && (v == 0.5); // img center
+      // enable_print = false;
+      // if (enable_print)
+      //   printf("ray dir = (%f,%f,%f)\n", r->dir_.x, r->dir_.y, r->dir_.z);
+      // // END // DEBUG STUFF
+
+      float t=0;
+      float minDistance = infinity;
+      float d = infinity;
+      while (t < max_distance_) {
+        minDistance = infinity;
+        d = sph->getDist(r->at(t));
+        /// if (enable_print) printf("d = %f\n", d); // DEBUG STUFF
+        if (d < minDistance) {
+          minDistance = d;
+          // if (enable_print) printf("mDist upd = %f\n", minDistance); // DEBUG STUFF
+        }
+        // did we intersect the shape?
+        if (minDistance <= hit_threshold_ * t) {
+          // if (enable_print) printf("hit at t = %f\n", t); // DEBUG STUFF
+          return t;
+        }
+        t += minDistance;
+      }
+      return t;
+    }
+
+    __device__ color shade(const point3 p, const vec3 v, const Sphere *sph) const {
+      vec3 n = sph->getNormalAt(p);
+
+      // // DEBUG STUFF
+      // float idx_u = ((threadIdx.x + blockIdx.x * blockDim.x) + .5) / ((float) IMG_W -1); // NDC Coord
+      // float idx_v = ((threadIdx.y + blockIdx.y * blockDim.y) + .5) / ((float) IMG_H -1); // NDC Coord
+      // bool enable_print = (idx_u == 0.5) && (idx_v == 0.5); // img center
+      // bool enable_print = !true;
+      // if (enable_print) printf("n = (%f,%f,%f)\n",
+      //     (n.x+1)*.5,
+      //     (n.y+1)*.5,
+      //     (n.z+1)*.5);
+      // // END // DEBUG STUFF
+
+      color outRadiance(0);
+
+      vec3 l;
+      float nDotl;
+      color brdf;
+
+      bool shadow;
+      float dist2 = 0;
+
+      // TODO
+      //Color cdiff = shape->getAlbedo(p);
+      //float shininess_factor = shape->getShininess(p);
+      //Color cspec = shape->getSpecular(p);
+      color cdiff(.5,.3,.8);
+      float shininess_factor = 2;
+      color cspec(0.04);
+
+      // TODO
+      //for (const auto& light : scene_->getLights()) {
+      //l = (light->getPosition() - p);
+      l = (point3(5,4,3) - p);
+      dist2 = glm::length(l); // squared dist
+      l = glm::normalize(l);
+      nDotl = glm::dot(n,l);
+
+      if (nDotl > 0) {
+        vec3 r = 2 * nDotl * n - l;
+        float vDotr = glm::dot(v, r);
+        brdf =
+          cdiff / color(M_PI) +
+          cspec * powf(vDotr, shininess_factor);
+
+        // With shadows below
+        //shadow = sphereTraceShadow(Ray(p,lightDir), shape);
+        shadow = false; // TODO
+        color lightColor(1);
+        color lightIntensity(80);
+
+        outRadiance += color(1-shadow) * brdf * lightColor * lightIntensity * nDotl
+          / (float) (4 * dist2) // with square falloff
+          ;
+      }
+      //}
+      // TODO
+      //if (scene_->hasAmbientLight()) {
+      //Light* ambientLight = scene_->getAmbientLight();
+      color ambientColor(1);
+      color ambientIntensity(.17);
+      outRadiance += ambientColor * ambientIntensity * cdiff;
+      //}
+      return glm::clamp(outRadiance, color(0,0,0), color(1,1,1));
+    }
+
     // TODO
-    //  Color sphereTrace(const Ray& r); // better with pointer?
-    //  Color shade(const Point3& p, const Vec3& viewDir, const ImplicitShape *shape);
     //  bool sphereTraceShadow(const Ray& r, const ImplicitShape *shapeToShadow);
 };
+
+// TODO Tracer returns HitRecord and Shader uses it
+//class HitRecord
+//class Shader
 
 static __global__ void kernel(uchar4 *ptr,
     const Camera *cam,
@@ -143,13 +273,7 @@ static __global__ void kernel(uchar4 *ptr,
   int y = threadIdx.y + blockIdx.y * blockDim.y;
   int offset = x + y * blockDim.x * gridDim.x;
 
-  //// now calculate the value at that position
-  //float fx = x/(float)IMG_W - 0.5f;
-  //float fy = y/(float)IMG_H - 0.5f;
-  //unsigned char green =
-  //  128 + 127 * sin(abs(fx*100) - abs(fy*100));
-
-  // in img coord (0,0) is top-left
+  // in img coord (0,0) is bottom-left
   // Put coords in [0,1]
   float u = (x + .5) / ((float) IMG_W -1); // NDC Coord
   float v = (y + .5) / ((float) IMG_H -1); // NDC Coord
@@ -157,73 +281,63 @@ static __global__ void kernel(uchar4 *ptr,
 
   color c = trc->trace(&r, sph);
 
-  //img[j*IMG_W+i + 0] = (int) 255 * c.r;
-  //img[j*IMG_W+i + 1] = (int) 255 * c.g;
-  //img[j*IMG_W+i + 2] = (int) 255 * c.b;
-  //img[j*IMG_W+i + 3] = (int) 255 * 1;
-  //printf("(x,y) = (%d, %d)\n", x,y);
-  //printf("(u,v) = (%f, %f)\n", u,v);
-  //printf("[%f, %f, %f]\n", c.r, c.g, c.b);
-  //printf("[%d, %d, %d]\n", (int)(255*c.r), (int)(255*c.g), (int)(255*c.b));
-
   // accessing uchar4 vs unsigned char*
   ptr[offset].x = (int) (255 * c.r); // (int) (u * 255); //0;
   ptr[offset].y = (int) (255 * c.g); // (int) (v * 255); //(int)255/2;
   ptr[offset].z = (int) (255 * c.b); // 0;
   ptr[offset].w = 255;
 }
+
 class Renderer {
   private:
     Tracer *tracer_;
   public:
-    void render(
+    __host__ void render(
         const Camera *cam,
         const Sphere *sph,
               uchar4 *devPtr) {
       // --- Generate One Frame ---
+      // TODO dims
+      //dim3 grids(IMG_W/16, IMG_H/16);
+      //dim3 threads(16,16);
+      dim3 grids(IMG_W, IMG_H);
+      dim3 threads(1);
 
-      // TODO qui va il kernel al posto dei for
-      dim3 grids(IMG_W/16, IMG_H/16);
-      dim3 threads(16,16);
-      kernel<<<grids,threads>>>(devPtr, cam, sph, tracer_);
+      Camera *devCamPtr = nullptr;
+      Sphere *devSphPtr = nullptr;
+      Tracer *devTrcPtr = nullptr;
 
-      //// in img coord (0,0) is top-left
-      //for (int j=0; j<IMG_H; ++j) {
-      //  for (int i=0; i<IMG_W; ++i) {
-      //    // Put coords in [0,1]
-      //    float u = double(i + .5) / (IMG_W -1); // NDC Coord
-      //    float v = double(j + .5) / (IMG_H -1); // NDC Coord
-      //    Ray r = cam->generate_ray(u,v);
+      // Static allocation on device memory
+      HANDLE_ERROR(
+          cudaMalloc((void**)&devCamPtr, sizeof(Camera))
+          );
+      HANDLE_ERROR(
+          cudaMalloc((void**)&devSphPtr, sizeof(Sphere))
+          );
+      //HANDLE_ERROR(
+      //    cudaMalloc((void**)&devTrcPtr, sizeof(Tracer))
+      //    );
 
-      //    color c = tracer_->trace(r);
+      // Copy from host to device
+      HANDLE_ERROR(
+          cudaMemcpy((void*)devCamPtr, (void*)cam, sizeof(Camera), cudaMemcpyHostToDevice)
+          );
+      HANDLE_ERROR(
+        cudaMemcpy((void*)devSphPtr, (void*)sph, sizeof(Sphere), cudaMemcpyHostToDevice)
+        );
+      //HANDLE_ERROR(
+      //  cudaMemcpy((void*)devTrcPtr, (void*)tracer_, sizeof(Tracer), cudaMemcpyHostToDevice)
+      //  );
 
-      //    img[j*IMG_W+i + 0] = (int) 255 * c.r;
-      //    img[j*IMG_W+i + 1] = (int) 255 * c.g;
-      //    img[j*IMG_W+i + 2] = (int) 255 * c.b;
-      //    img[j*IMG_W+i + 3] = (int) 255 * 1;
-      //  }
-      //}
+      kernel<<<grids,threads>>>(devPtr, devCamPtr, devSphPtr, devTrcPtr);
+
+      cudaFree((void*)devCamPtr);
+      cudaFree((void*)devSphPtr);
+      cudaFree((void*)devTrcPtr);
     }
   private:
     // TODO far funzionare qua
     //static __global__ void kernel(uchar4 *ptr) {
-    //  // map from threadIdx/BlockIdx to pixel position
-    //  int x = threadIdx.x + blockIdx.x * blockDim.x;
-    //  int y = threadIdx.y + blockIdx.y * blockDim.y;
-    //  int offset = x + y * blockDim.x * gridDim.x;
-
-    //  // now calculate the value at that position
-    //  float fx = x/(float)IMG_W - 0.5f;
-    //  float fy = y/(float)IMG_H - 0.5f;
-    //  unsigned char green =
-    //    128 + 127 * sin(abs(fx*100) - abs(fy*100));
-
-    //  // accessing uchar4 vs unsigned char*
-    //  ptr[offset].x = 0;
-    //  ptr[offset].y = green;
-    //  ptr[offset].z = 0;
-    //  ptr[offset].w = 255;
-    //}
 };
 
 
@@ -293,12 +407,12 @@ int main() {
       );
 
   Camera cam;
-  Sphere sph(1);
+  Sphere sph(2);
   Renderer renderer;
   renderer.render(&cam, &sph, devPtr);
 
-  
 
+  HANDLE_ERROR(cudaDeviceSynchronize()); // helps with debugging!!
   HANDLE_ERROR(
       cudaGraphicsUnmapResources(1, &resource, NULL)
       );

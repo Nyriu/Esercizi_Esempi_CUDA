@@ -18,4 +18,12 @@ elif [ ! -f "./main" ]; then
   make
   cd ..
 fi
-./main
+
+
+if [ "$1" == "-t" ]; then
+  echo "With 5 sec timeout"
+  timeout 5 ./main
+else
+  ./main
+fi
+
