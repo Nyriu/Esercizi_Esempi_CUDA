@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 project(RT_Interop LANGUAGES CXX CUDA)
+#project(LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 11)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+#set(CMAKE_GENERATOR "Ninja")
+#set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
  
 include(CTest)
  
@@ -52,6 +54,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "../")
 add_executable(main ${SOURCES})
 #set_property(TARGET main PROPERTY CUDA_ARCHITECTURES 50 75)
 set_property(TARGET main PROPERTY CUDA_ARCHITECTURES 75)
+#add_compile_options(--cuda-gpu-arch=sm_75)
 set_target_properties( main
   PROPERTIES CUDA_SEPARABLE_COMPILATION ON
   )
