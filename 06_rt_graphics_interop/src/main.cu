@@ -13,8 +13,12 @@
 #include <cuda.h>
 #include <cuda_gl_interop.h>
 
+#define rnd(x) (x*rand() / (float)RAND_MAX)
+
 #include "common.h"
 #include "Sphere.h"
+#include "Light.h"
+#include "Scene.h"
 #include "Ray.h"
 #include "Camera.h"
 #include "Tracer.h"
@@ -34,14 +38,9 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 //#define IMG_H 1080
 //#define IMG_W IMG_H*16/9;
 
-
-// TODO Tracer returns HitRecord and Shader uses it
-//class HitRecord
-//class Shader
-
 static __global__ void kernel(uchar4 *ptr,
     const Camera *cam,
-    const Sphere *sph,
+    const Scene *sce,
     const Tracer *trc
     ) {
 
@@ -56,7 +55,9 @@ static __global__ void kernel(uchar4 *ptr,
   float v = (y + .5) / ((float) IMG_H -1); // NDC Coord
   Ray r = cam->generate_ray(u,v);
 
-  color c = trc->trace(&r, sph);
+  color c = trc->trace(&r, sce);
+  //color c(0.2);
+
 
   // accessing uchar4 vs unsigned char*
   ptr[offset].x = (int) (255 * c.r); // (int) (u * 255); //0;
@@ -70,9 +71,9 @@ class Renderer {
     Tracer *tracer_;
   public:
     __host__ void render(
-        const Camera *cam,
-        const Sphere *sph,
-              uchar4 *devPtr) {
+        Camera *cam,
+        Scene *sce,
+        uchar4 *devPtr) {
       // --- Generate One Frame ---
       // TODO dims
       //dim3 grids(IMG_W/16, IMG_H/16);
@@ -81,36 +82,23 @@ class Renderer {
       dim3 threads(1);
 
       Camera *devCamPtr = nullptr;
-      Sphere *devSphPtr = nullptr;
-      Tracer *devTrcPtr = nullptr;
+      Tracer *devTrcPtr = nullptr; // TODO
 
       // Static allocation on device memory
       HANDLE_ERROR(
           cudaMalloc((void**)&devCamPtr, sizeof(Camera))
           );
-      HANDLE_ERROR(
-          cudaMalloc((void**)&devSphPtr, sizeof(Sphere))
-          );
-      //HANDLE_ERROR(
-      //    cudaMalloc((void**)&devTrcPtr, sizeof(Tracer))
-      //    );
-
       // Copy from host to device
       HANDLE_ERROR(
           cudaMemcpy((void*)devCamPtr, (void*)cam, sizeof(Camera), cudaMemcpyHostToDevice)
           );
-      HANDLE_ERROR(
-        cudaMemcpy((void*)devSphPtr, (void*)sph, sizeof(Sphere), cudaMemcpyHostToDevice)
-        );
-      //HANDLE_ERROR(
-      //  cudaMemcpy((void*)devTrcPtr, (void*)tracer_, sizeof(Tracer), cudaMemcpyHostToDevice)
-      //  );
+      Scene *devScePtr = sce->to_device();
 
-      kernel<<<grids,threads>>>(devPtr, devCamPtr, devSphPtr, devTrcPtr);
+      kernel<<<grids,threads>>>(devPtr, devCamPtr, devScePtr, devTrcPtr);
 
-      cudaFree((void*)devCamPtr);
-      cudaFree((void*)devSphPtr);
-      cudaFree((void*)devTrcPtr);
+      HANDLE_ERROR(cudaFree((void*)devCamPtr));
+      HANDLE_ERROR(cudaFree((void*)devScePtr));
+      HANDLE_ERROR(cudaFree((void*)devTrcPtr));
     }
   private:
     // TODO far funzionare qua
@@ -184,10 +172,37 @@ int main() {
       );
 
   Camera cam;
-  Sphere sph(2);
-  Renderer renderer;
-  renderer.render(&cam, &sph, devPtr);
+  Scene sce;
 
+  // Init Random scene
+  int spheres_num = 100;
+  srand( (unsigned)time(NULL) );
+  for (int i=0; i<spheres_num; i++) {
+    point3 pos(
+        (float) rnd(4.0f) - 2,
+        (float) rnd(4.0f) - 2,
+        (float) rnd(4.0f) - 2
+        );
+    float radius = (float) rnd(0.3f) + 0.1;
+    color c(
+        (float) rnd(1.0f),
+        (float) rnd(1.0f),
+        (float) rnd(1.0f)
+        );
+    sce.addShape(new Sphere(
+          pos,
+          radius,
+          c
+          )
+        );
+  }
+
+  //sce.addShape(new Sphere(1, color(0.5, 0.8, 0.7)));
+  //sce.addShape(new Sphere(point3(1.5,0,0), .5));
+  //sce.addLight(new PointLight(point3(5,4,3), color(1), 80));
+
+  Renderer renderer;
+  renderer.render(&cam, &sce, devPtr);
 
   HANDLE_ERROR(cudaDeviceSynchronize()); // helps with debugging!!
   HANDLE_ERROR(
