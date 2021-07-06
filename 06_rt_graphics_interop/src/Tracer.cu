@@ -13,6 +13,8 @@ __device__ color Tracer::trace(const Ray *r, const Scene *sce) const {
 
 
 __device__ HitRecord Tracer::sphereTrace(const Ray *r, const Scene *sce) const {
+  if (sce->getShapesNum() <= 0) return HitRecord();
+
   float t=0;
   float minDistance = infinity;
   float d = infinity;
@@ -20,7 +22,7 @@ __device__ HitRecord Tracer::sphereTrace(const Ray *r, const Scene *sce) const {
   while (t < max_distance_) {
     minDistance = infinity; // TODO REMOVEME
     Sphere *sph = sce->getShapes();
-    for (int i=0; i <= sce->getShapesNum(); i++) {
+    for (int i=0; i < sce->getShapesNum(); i++) {
       d = sph->getDist(r->at(t));
       if (d < minDistance) {
         minDistance = d;
@@ -62,31 +64,38 @@ __device__ color Tracer::shade(const HitRecord *ht, const Scene *sce) const {
   color cspec(0.04);
 
   // TODO scene lights
-  //for (const auto& light : sce->getLights()) {
-  //l = (light->getPosition() - p);
-  l = (point3(5,4,3) - p);
-  dist2 = glm::length(l); // squared dist
-  l = glm::normalize(l);
-  nDotl = glm::dot(n,l);
+  if (sce->getLightsNum() > 0) {
+    Light *lgt = sce->getLights();
 
-  if (nDotl > 0) {
-    vec3 r = 2 * nDotl * n - l;
-    float vDotr = glm::dot(v, r);
-    brdf =
-      cdiff / color(M_PI) +
-      cspec * powf(vDotr, shininess_factor);
+    for (int i=0; i < sce->getLightsNum(); i++) {
+      l = (lgt->getPosition() - p); // TODO // HERE ERROR if PointLight : public Light
+      //l = (point3(5,4,3) - p);
+      dist2 = glm::length(l); // squared dist
+      l = glm::normalize(l);
+      nDotl = glm::dot(n,l);
 
-    // With shadows below
-    //shadow = sphereTraceShadow(Ray(p,lightDir), shape);
-    shadow = false; // TODO trace shadow
-    color lightColor(1);
-    color lightIntensity(80);
+      if (nDotl > 0) {
+        vec3 r = 2 * nDotl * n - l;
+        float vDotr = glm::dot(v, r);
+        brdf =
+          cdiff / color(M_PI) +
+          cspec * powf(vDotr, shininess_factor);
 
-    outRadiance += color(1-shadow) * brdf * lightColor * lightIntensity * nDotl
-      / (float) (4 * dist2) // with square falloff
-      ;
+        // With shadows below
+        //shadow = sphereTraceShadow(Ray(p,lightDir), shape);
+        shadow = false; // TODO trace shadow
+        //color lightColor(1);
+        //color lightIntensity(80);
+        color lightColor = lgt->getColor();
+        color lightIntensity = lgt->getIntensity();
+
+        outRadiance += color(1-shadow) * brdf * lightColor * lightIntensity * nDotl
+          / (float) (4 * dist2) // with square falloff
+          ;
+      }
+      lgt++;
+    }
   }
-  //}
   // TODO scene amb light
   //if (scene_->hasAmbientLight()) {
   //Light* ambientLight = scene_->getAmbientLight();

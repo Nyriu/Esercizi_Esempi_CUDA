@@ -15,5 +15,6 @@ test
 *ppm
 
 *.log
+*.tmp
 
 notes.txt
