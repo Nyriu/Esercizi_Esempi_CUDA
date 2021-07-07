@@ -3,59 +3,54 @@
 
 #include "common.h"
 
-/**
- * ATM Class Hierarchy does NOT work
- * Must understand how to move correctly to device PointLight when it's 'under' Light
- **/
-
-//class Light {
-//  protected:
-//    point3 position_ = color(0);
-//    color color_ = color(1);
-//    color intensity_ = color(1);
-//  public:
-//    virtual ~Light() {}
-//
-//    __device__ virtual point3 getPosition() const { return position_; }
-//
-//    __device__ virtual color getColor() const { return color_; }
-//
-//    __device__ virtual color getIntensity() const { return intensity_; }
-//};
-
-//class PointLight { //: public Light {
-class Light { //: public Light {
+class Light {
   protected:
     point3 position_ = color(0);
     color color_ = color(1);
     color intensity_ = color(80);
   public:
-    Light(const point3& position, const color& c) {
-    //PointLight(const point3& position, const color& c) {
+    //    virtual ~Light() {}
+
+    // virtual cannot be used in CUDA if instance is generated on host
+    // if virtual needed must rework to generate objects only on device
+    // or re-instanciate them (too heavy/uneficcient)
+    //__device__ virtual point3 getPosition() const { return position_; }
+    //__device__ virtual color getColor() const { return color_; }
+    //__device__ virtual color getIntensity() const { return intensity_; }
+    __device__ point3 getPosition() const { return position_; }
+    __device__ color getColor() const { return color_; }
+    __device__ color getIntensity() const { return intensity_; }
+};
+
+class PointLight : public Light {
+  public:
+    PointLight(const point3& position, const color& c) {
       position_ = position;
       color_ = c;
     }
-    Light(const point3& position, const color& c, const float intensity) {
-    //PointLight(const point3& position, const color& c, const float& intensity) {
+    PointLight(const point3& position, const color& c, const float& intensity) {
       position_ = position;
       color_ = c;
       intensity_ = color(intensity);
     }
-    __device__ point3 getPosition() const { return position_; }
-
-    __device__ color getColor() const { return color_; }
-
-    __device__ color getIntensity() const { return intensity_; }
 };
 
-//class AmbientLight : public Light {
-////  public:
-////    AmbientLight(const color& color, const float& intensity) {
-////      position_ = point3(0);
-////      color_ = color;
-////      //intensity_ = color(intensity, intensity,  intensity);
-////    }
-//};
+class AmbientLight : public Light {
+  public:
+    AmbientLight(const color& c) {
+      color_ = c;
+      intensity_ = color(.17);
+    }
+    AmbientLight() {
+      color_ = color(1);
+      intensity_ = color(.17);
+    }
+    AmbientLight(const color& c, const float& intensity) {
+      color_ = c;
+      intensity_ = color(intensity, intensity,  intensity);
+    }
+    __device__ point3 getPosition() const { printf("AmbLight has no position!!"); }
+};
 
 
 #endif

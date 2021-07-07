@@ -202,8 +202,9 @@ int main() {
   //sce.addLight(new PointLight(point3(5,4,3), color(1), color(80)));
   //sce.addLight(new PointLight(point3(5,4,3), color(1)));
   //sce.addLight(new Light(point3(5,4,3), color(1)));
-  sce.addLight(new Light(point3( 5,4,3), color(0.3,1,0.5)));
-  sce.addLight(new Light(point3(-4,4,3), color(1,0.3,0.5), 60));
+  sce.addLight(new PointLight(point3( 5,4,3), color(0.3,1,0.5)));
+  sce.addLight(new PointLight(point3(-4,4,3), color(1,0.3,0.5), 50));
+  sce.addAmbientLight(new AmbientLight());
 
   Renderer renderer;
   renderer.render(&cam, &sce, devPtr);

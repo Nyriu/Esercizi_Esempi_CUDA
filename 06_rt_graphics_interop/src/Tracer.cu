@@ -63,13 +63,11 @@ __device__ color Tracer::shade(const HitRecord *ht, const Scene *sce) const {
   float shininess_factor = 2;
   color cspec(0.04);
 
-  // TODO scene lights
   if (sce->getLightsNum() > 0) {
     Light *lgt = sce->getLights();
 
     for (int i=0; i < sce->getLightsNum(); i++) {
-      l = (lgt->getPosition() - p); // TODO // HERE ERROR if PointLight : public Light
-      //l = (point3(5,4,3) - p);
+      l = (lgt->getPosition() - p);
       dist2 = glm::length(l); // squared dist
       l = glm::normalize(l);
       nDotl = glm::dot(n,l);
@@ -84,8 +82,6 @@ __device__ color Tracer::shade(const HitRecord *ht, const Scene *sce) const {
         // With shadows below
         //shadow = sphereTraceShadow(Ray(p,lightDir), shape);
         shadow = false; // TODO trace shadow
-        //color lightColor(1);
-        //color lightIntensity(80);
         color lightColor = lgt->getColor();
         color lightIntensity = lgt->getIntensity();
 
@@ -96,13 +92,10 @@ __device__ color Tracer::shade(const HitRecord *ht, const Scene *sce) const {
       lgt++;
     }
   }
-  // TODO scene amb light
-  //if (scene_->hasAmbientLight()) {
-  //Light* ambientLight = scene_->getAmbientLight();
-  color ambientColor(1);
-  color ambientIntensity(.17);
-  outRadiance += ambientColor * ambientIntensity * cdiff;
-  //}
+  if (sce->hasAmbientLight()) {
+    AmbientLight* ambientLight = sce->getAmbientLight();
+    outRadiance += ambientLight->getColor() * ambientLight->getIntensity() * cdiff;
+  }
   return glm::clamp(outRadiance, color(0,0,0), color(1,1,1));
 }
 

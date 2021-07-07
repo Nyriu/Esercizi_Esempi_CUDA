@@ -7,7 +7,6 @@
 #include "Sphere.h"
 #include "Camera.h"
 #include "Light.h"
-//#include "Ray.h"
 
 class Scene {
   public:
@@ -17,13 +16,14 @@ class Scene {
   private:
     Shapes shapes_;
     Lights lights_;
-    //AmbientLight* ambientLight_ = nullptr;
+    AmbientLight* ambientLight_ = nullptr;
 
     Scene *devPtr_ = nullptr;
     Sphere *devSpheres_ = nullptr;
     int spheres_num_ = 0; // number of spheres
     Light *devLights_ = nullptr;
     int lights_num_ = 0; // number of lights
+    AmbientLight *devAmbLight_ = nullptr;
   public:
     Scene() = default;
     Scene(Shapes shapes, Lights lights) : shapes_(shapes), lights_(lights) {}
@@ -31,15 +31,15 @@ class Scene {
     //void addShape(ImplicitShape* shape); // TODO shape hierarchy
     void addShape(Sphere* sph);
     void addLight(Light* light);
-    //void addAmbientLight(AmbientLight* light);
+    void addAmbientLight(AmbientLight* light);
 
-    //bool hasAmbientLight() const { return ambientLight_ != nullptr; }
+    __device__ __host__ bool hasAmbientLight() const { return ambientLight_ != nullptr; }
 
     __device__ Sphere* getShapes() const { return devSpheres_; }
     __device__ int getShapesNum() const { return spheres_num_; }
     __device__ Light* getLights() const { return devLights_; }
     __device__ int getLightsNum() const { return lights_num_; }
-    //__device__ Light* getAmbientLight() const { return ambientLight_; }
+    __device__ AmbientLight* getAmbientLight() const { return devAmbLight_; }
 
   private:
     __host__ void shapes_to_device();

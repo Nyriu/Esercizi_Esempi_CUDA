@@ -12,9 +12,9 @@ void Scene::addLight(Light* light) {
   lights_.push_back(light);
 }
 
-//void Scene::addAmbientLight(AmbientLight* light) {
-//  ambientLight_ = light;
-//}
+void Scene::addAmbientLight(AmbientLight* light) {
+  ambientLight_ = light;
+}
 
 __host__ void Scene::shapes_to_device() {
   size_t total_size = 0;
@@ -45,38 +45,40 @@ __host__ void Scene::shapes_to_device() {
 }
 
 __host__ void Scene::lights_to_device() {
-  std::cout << 
-    "\nsizeof(Light) = " << sizeof(Light) <<
-    //"\nsizeof(PointLight) = " << sizeof(PointLight) <<
-    std::endl;
-
-  size_t total_size = 0;
-  for (Light *lgt : lights_) {
-    total_size += sizeof(*lgt);
-    std::cout << 
-      "sizeof(*lgt) = " << sizeof(*lgt) <<
-      std::endl;
-  }
-  // Static allocation on device memory
-  HANDLE_ERROR(
-      cudaMalloc((void**)&devLights_, total_size)
-      );
-
-  int offset = 0;
-  for (Light *lgt : lights_) {
-    // Copy from host to device
+  if (lights_num_ > 0) {
+    size_t total_size = 0;
+    for (Light *lgt : lights_) {
+      total_size += sizeof(*lgt);
+    }
+    // Static allocation on device memory
     HANDLE_ERROR(
-        cudaMemcpy((void*)(devLights_+offset), (void*)lgt, sizeof(*lgt), cudaMemcpyHostToDevice)
+        cudaMalloc((void**)&devLights_, total_size)
         );
-    offset++;
-  }
 
-  if (offset != lights_num_) {
-    std::cout << "ERROR"
-      "offset = " << offset <<
-      "lights_num_ = " << lights_num_ <<
-     std::endl;
-    exit(1);
+    int offset = 0;
+    for (Light *lgt : lights_) {
+      // Copy from host to device
+      HANDLE_ERROR(
+          cudaMemcpy((void*)(devLights_+offset), (void*)lgt, sizeof(*lgt), cudaMemcpyHostToDevice)
+          );
+      offset++;
+    }
+
+    if (offset != lights_num_) {
+      std::cout << "ERROR"
+        "offset = " << offset <<
+        "lights_num_ = " << lights_num_ <<
+        std::endl;
+      exit(1);
+    }
+  }
+  if (hasAmbientLight()) {
+    HANDLE_ERROR(
+        cudaMalloc((void**)&devAmbLight_, sizeof(AmbientLight))
+        );
+    HANDLE_ERROR(
+        cudaMemcpy((void*)devAmbLight_, (void*)ambientLight_, sizeof(AmbientLight), cudaMemcpyHostToDevice)
+        );
   }
 }
 
