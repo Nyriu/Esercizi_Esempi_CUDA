@@ -1,6 +1,20 @@
 #include <iostream>
 #include <vector>
 #include <cuda.h>
+//#include <cooperative_groups.h>
+//using namespace cooperative_groups;
+//// Alternatively use an alias to avoid polluting the namespace with collective algorithms
+////namespace cg = cooperative_groups;
+
+////for __syncthreads()
+//#ifndef __CUDACC__ 
+//#define __CUDACC__
+//#endif
+//#include <device_functions.h>
+#include <cuda_runtime_api.h> 
+#include <cooperative_groups.h>
+
+
 
 static void HandleError( cudaError_t err, const char *file, int line) {
   if (err != cudaSuccess) {
@@ -77,10 +91,10 @@ static __global__ void wrong_example_kernel(Polygon *pols, int n_pols) {
 }
 
 
-static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
+static __global__ void inst_obj_dev_kernel(PolygonInfo *pols_infos, int n_pols) {
   int x = threadIdx.x + blockIdx.x * blockDim.x;
   int y = threadIdx.y + blockIdx.y * blockDim.y;
-  printf("%d %d\n", x,y);
+  //printf("%d %d\n", x,y);
 
   size_t pols_size = sizeof(Polygon)*n_pols;
   Polygon *pols = (Polygon*) malloc(pols_size);
@@ -90,28 +104,72 @@ static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
     //PolygonInfo tmp_pi = *(pols_infos+i);
     PolygonInfo *pi_p = pols_infos+i;
 
-    printf("w=%d, h=%d, ptype=%d\n", pi_p->width, pi_p->height, pi_p->ptype);
+    //printf("w=%d, h=%d, ptype=%d\n", pi_p->width, pi_p->height, pi_p->ptype);
 
     if (pi_p->ptype == PolygonType::rect) {
-      printf("type rect...\n");
       tmp_p = new Rectangle(*(pols_infos+i));
     } else if (pi_p->ptype == PolygonType::triang) {
-      printf("type triang...\n");
       tmp_p = new Triangle(*(pols_infos+i));
     } else if (pi_p->ptype == PolygonType::none) {
-      printf("type none...\n");
       tmp_p = new Polygon(*(pols_infos+i));
     } else {
       printf("we have a problem...\n");
     }
 
-    printf("sizeof(tmp_p) = %lu\n", sizeof(*tmp_p));
     memcpy(pols+i, tmp_p, sizeof(*tmp_p));
   }
 
+  printf("%d %d\n", x,y);
   for (int i=0; i<n_pols; i++) {
-    //printf("area = %d\n", (pols+i)->area());
-    printf("area = %d\n", pols[i].area());
+    printf("\t area = %d\n", pols[i].area());
+  }
+
+}
+
+
+__device__ Polygon *pols = nullptr;
+static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
+  int x = threadIdx.x + blockIdx.x * blockDim.x;
+  int y = threadIdx.y + blockIdx.y * blockDim.y;
+  //printf("%d %d\n", x,y);
+
+  if (x == 0 && y == 0) {
+    printf("%d %d\n I'm instancing...\n", x,y);
+    size_t pols_size = sizeof(Polygon)*n_pols;
+    pols = (Polygon*) malloc(pols_size);
+
+    for (int i=0; i<n_pols; i++) {
+      Polygon *tmp_p = nullptr;
+      //PolygonInfo tmp_pi = *(pols_infos+i);
+      PolygonInfo *pi_p = pols_infos+i;
+
+      //printf("w=%d, h=%d, ptype=%d\n", pi_p->width, pi_p->height, pi_p->ptype);
+
+      if (pi_p->ptype == PolygonType::rect) {
+        tmp_p = new Rectangle(*(pols_infos+i));
+      } else if (pi_p->ptype == PolygonType::triang) {
+        tmp_p = new Triangle(*(pols_infos+i));
+      } else if (pi_p->ptype == PolygonType::none) {
+        tmp_p = new Polygon(*(pols_infos+i));
+      } else {
+        printf("we have a problem...\n");
+      }
+      memcpy(pols+i, tmp_p, sizeof(*tmp_p));
+    }
+  }
+
+  __syncthreads(); // this is needed
+  // this handle only the case of one block
+
+  if (x == 0 && y == 0) {
+    for (int i=0; i<n_pols; i++) {
+      printf("%d %d\n area = %d\n", x, y, pols[i].area());
+    }
+  } else {
+    //printf("%d %d\n I do nothig atm...\n pols = %p\n", x,y, pols);
+    for (int i=0; i<n_pols; i++) {
+      printf("%d %d\n pols=%p, area = %d\n", x, y, pols, pols[i].area());
+    }
   }
 
 }
@@ -130,17 +188,9 @@ int main() {
   // Host init
   //Polygon tri = Triangle(3,4);
   Triangle tri(3,4);
-  //std::cout << "tri.w = " << tri.width << std::endl;
-  //std::cout << "tri.h = " << tri.height << std::endl;
   std::cout << "tri.area() = " << tri.area() << std::endl;
   Rectangle rec(5,7);
-  //std::cout << "rec.w = " << rec.width << std::endl;
-  //std::cout << "rec.h = " << rec.height << std::endl;
   std::cout << "rec.area() = " << rec.area() << std::endl;
-
-  std::cout << "sizeof(Polygon) " << sizeof(Polygon) << std::endl;
-  std::cout << "sizeof(Triangle) " << sizeof(Triangle) << std::endl;
-  std::cout << "sizeof(Rectangle) " << sizeof(Rectangle) << std::endl;
 
   std::vector<Polygon*> pols;
   pols.push_back(&tri);
@@ -152,6 +202,7 @@ int main() {
 
   // Now I want to move the vector to GPU and
   // for each elem call area() from device
+
 
   // { /// WRONG WAY
   //   size_t total_size = 0;
@@ -177,31 +228,41 @@ int main() {
   //   // this generate a wrong mem access because vtable on host
   // } /// END // WRONG WAY
 
-  { /// INSTACING OBJS ON DEVICE
+  //{ /// INSTACING OBJS ON DEVICE
+  //  size_t pols_infos_size = sizeof(PolygonInfo)*pols.size();
+  //  PolygonInfo *pols_infos = (PolygonInfo *) malloc(pols_infos_size);
+  //  int i = 0;
+  //  for (Polygon *p : pols) {
+  //    PolygonInfo pi = p->get_info();
+  //    memcpy(&pols_infos[i], &pi, sizeof(pi));
+  //    i++;
+  //  }
+
+  //  PolygonInfo *dev_pols_infos = nullptr;
+  //  HANDLE_ERROR(
+  //      cudaMalloc((void**)&dev_pols_infos, pols_infos_size)
+  //      );
+  //  HANDLE_ERROR(
+  //      cudaMemcpy((void*)dev_pols_infos, (void*)pols_infos, pols_infos_size, cudaMemcpyHostToDevice)
+  //      );
+
+  //  free(pols_infos);
+
+  //  dim3 grids(1);
+  //  dim3 threads(1);
+  //  inst_obj_dev_kernel<<<grids,threads>>>(dev_pols_infos, pols.size());
+  //} /// END // INSTACING OBJS ON DEVICE
+
+
+  { /// AS BEFORE BUT ONE THREAD INST AND THE OTHER USE
     size_t pols_infos_size = sizeof(PolygonInfo)*pols.size();
     PolygonInfo *pols_infos = (PolygonInfo *) malloc(pols_infos_size);
     int i = 0;
     for (Polygon *p : pols) {
       PolygonInfo pi = p->get_info();
       memcpy(&pols_infos[i], &pi, sizeof(pi));
-      std::cout <<
-        "\npi.width= " << pi.width <<
-        "\npi.height= " << pi.height <<
-        "\npi.ptype= " << pi.ptype <<
-        "\npols_infos[i].width = " << pols_infos[i].width <<
-        "\npols_infos[i].height = " << pols_infos[i].height <<
-        "\npols_infos[i].ptype = " << pols_infos[i].ptype <<
-        "\n" << std::endl;
       i++;
     }
-
-    std::cout <<
-      "\nnone   :" << PolygonType::none <<
-      "\nrect   :" << PolygonType::rect <<
-      "\ntriang :" << PolygonType::triang <<
-      "\n\nptype = " << pols_infos[0].ptype << 
-      "\nptype = "   << pols_infos[1].ptype << 
-      "\n" << std::endl;
 
     PolygonInfo *dev_pols_infos = nullptr;
     HANDLE_ERROR(
@@ -211,15 +272,15 @@ int main() {
         cudaMemcpy((void*)dev_pols_infos, (void*)pols_infos, pols_infos_size, cudaMemcpyHostToDevice)
         );
 
-    //free(pols_infos);
+    free(pols_infos);
 
     dim3 grids(1);
-    dim3 threads(1);
+    dim3 threads(10,10);
     kernel<<<grids,threads>>>(dev_pols_infos, pols.size());
-  } /// END // INSTACING OBJS ON DEVICE
-
+  } /// END
 
   HANDLE_ERROR(cudaDeviceSynchronize());
+  HANDLE_ERROR(cudaDeviceReset());
 
   return 0;
 }
