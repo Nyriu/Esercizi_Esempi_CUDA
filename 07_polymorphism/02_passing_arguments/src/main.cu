@@ -86,7 +86,7 @@ static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
   Polygon *pols = (Polygon*) malloc(pols_size);
 
   for (int i=0; i<n_pols; i++) {
-    Polygon tmp_p(0,0);
+    Polygon *tmp_p = nullptr;
     //PolygonInfo tmp_pi = *(pols_infos+i);
     PolygonInfo *pi_p = pols_infos+i;
 
@@ -94,19 +94,19 @@ static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
 
     if (pi_p->ptype == PolygonType::rect) {
       printf("type rect...\n");
-      tmp_p = Rectangle(*(pols_infos+i));
+      tmp_p = new Rectangle(*(pols_infos+i));
     } else if (pi_p->ptype == PolygonType::triang) {
       printf("type triang...\n");
-      tmp_p = Triangle(*(pols_infos+i));
+      tmp_p = new Triangle(*(pols_infos+i));
     } else if (pi_p->ptype == PolygonType::none) {
       printf("type none...\n");
-      tmp_p = Polygon(*(pols_infos+i));
+      tmp_p = new Polygon(*(pols_infos+i));
     } else {
       printf("we have a problem...\n");
     }
 
-    printf("sizeof(tmp_p) = %lu\n", sizeof(tmp_p));
-    memcpy(pols+i, &tmp_p, sizeof(tmp_p));
+    printf("sizeof(tmp_p) = %lu\n", sizeof(*tmp_p));
+    memcpy(pols+i, tmp_p, sizeof(*tmp_p));
   }
 
   for (int i=0; i<n_pols; i++) {
