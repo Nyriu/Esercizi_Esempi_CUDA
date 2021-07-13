@@ -131,34 +131,33 @@ __device__ Polygon *d_pols = nullptr;
 __device__ int d_n_pols = 0;
 static __global__ void copy_kernel(PolygonInfo *pols_infos, int n_pols) {
   int x = threadIdx.x + blockIdx.x * blockDim.x;
-  int y = threadIdx.y + blockIdx.y * blockDim.y;
   //printf("%d %d\n", x,y);
-
-  if (x == 0 && y == 0) {
-    printf("%d %d\n I'm instancing...\n", x,y);
+  if (x >= n_pols) return;
+  if (x == 0) {
+    // only the first thread inits vars
+    printf("(%d) \n init...\n", x);
     size_t pols_size = sizeof(Polygon)*n_pols;
     d_pols = (Polygon*) malloc(pols_size);
     d_n_pols = n_pols;
-
-    for (int i=0; i<n_pols; i++) {
-      Polygon *tmp_p = nullptr;
-      //PolygonInfo tmp_pi = *(pols_infos+i);
-      PolygonInfo *pi_p = pols_infos+i;
-
-      //printf("w=%d, h=%d, ptype=%d\n", pi_p->width, pi_p->height, pi_p->ptype);
-
-      if (pi_p->ptype == PolygonType::rect) {
-        tmp_p = new Rectangle(*(pols_infos+i));
-      } else if (pi_p->ptype == PolygonType::triang) {
-        tmp_p = new Triangle(*(pols_infos+i));
-      } else if (pi_p->ptype == PolygonType::none) {
-        tmp_p = new Polygon(*(pols_infos+i));
-      } else {
-        printf("we have a problem...\n");
-      }
-      memcpy(d_pols+i, tmp_p, sizeof(*tmp_p));
-    }
   }
+  __syncthreads(); // all threads must wait
+  //cooperative_groups::this_thread_block().sync(); // alternative // does the same
+
+  Polygon *tmp_p = nullptr;
+  PolygonInfo *pi_p = pols_infos+x;
+
+  printf("(%d)\n w=%d, h=%d, ptype=%d\n", x, pi_p->width, pi_p->height, pi_p->ptype);
+
+  if (pi_p->ptype == PolygonType::rect) {
+    tmp_p = new Rectangle(*pi_p);
+  } else if (pi_p->ptype == PolygonType::triang) {
+    tmp_p = new Triangle(*pi_p);
+  } else if (pi_p->ptype == PolygonType::none) {
+    tmp_p = new Polygon(*pi_p);
+  } else {
+    printf("we have a problem...\n");
+  }
+  memcpy(d_pols+x, tmp_p, sizeof(*tmp_p));
 }
 
 static __global__ void kernel() {
@@ -274,7 +273,7 @@ int main() {
 
     free(pols_infos);
 
-    copy_kernel<<<1,1>>>(dev_pols_infos, pols.size());
+    copy_kernel<<<1,pols.size()>>>(dev_pols_infos, pols.size());
     HANDLE_ERROR(cudaDeviceSynchronize());
     dim3 grids(3,3);
     dim3 threads(10,10);
