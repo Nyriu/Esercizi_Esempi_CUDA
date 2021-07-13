@@ -127,8 +127,9 @@ static __global__ void inst_obj_dev_kernel(PolygonInfo *pols_infos, int n_pols) 
 }
 
 
-__device__ Polygon *pols = nullptr;
-static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
+__device__ Polygon *d_pols = nullptr;
+__device__ int d_n_pols = 0;
+static __global__ void copy_kernel(PolygonInfo *pols_infos, int n_pols) {
   int x = threadIdx.x + blockIdx.x * blockDim.x;
   int y = threadIdx.y + blockIdx.y * blockDim.y;
   //printf("%d %d\n", x,y);
@@ -136,7 +137,8 @@ static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
   if (x == 0 && y == 0) {
     printf("%d %d\n I'm instancing...\n", x,y);
     size_t pols_size = sizeof(Polygon)*n_pols;
-    pols = (Polygon*) malloc(pols_size);
+    d_pols = (Polygon*) malloc(pols_size);
+    d_n_pols = n_pols;
 
     for (int i=0; i<n_pols; i++) {
       Polygon *tmp_p = nullptr;
@@ -154,26 +156,24 @@ static __global__ void kernel(PolygonInfo *pols_infos, int n_pols) {
       } else {
         printf("we have a problem...\n");
       }
-      memcpy(pols+i, tmp_p, sizeof(*tmp_p));
+      memcpy(d_pols+i, tmp_p, sizeof(*tmp_p));
     }
   }
-
-  __syncthreads(); // this is needed
-  // this handle only the case of one block
-
-  if (x == 0 && y == 0) {
-    for (int i=0; i<n_pols; i++) {
-      printf("%d %d\n area = %d\n", x, y, pols[i].area());
-    }
-  } else {
-    //printf("%d %d\n I do nothig atm...\n pols = %p\n", x,y, pols);
-    for (int i=0; i<n_pols; i++) {
-      printf("%d %d\n pols=%p, area = %d\n", x, y, pols, pols[i].area());
-    }
-  }
-
 }
 
+static __global__ void kernel() {
+  int x = threadIdx.x + blockIdx.x * blockDim.x;
+  int y = threadIdx.y + blockIdx.y * blockDim.y;
+  if (d_pols == nullptr) {
+    printf("%d %d\n pols=%p, d_n_pols=%d\n", x, y, d_pols, d_n_pols);
+    return;
+  }
+  for (int i=0; i<d_n_pols; i++) {
+    int area = d_pols[i].area();
+    if (area != 6 && area != 35)
+      printf("%d %d\n pols=%p, area = %d\n", x, y, d_pols, d_pols[i].area());
+  }
+}
 
 int main() {
   cudaDeviceProp prop;
@@ -254,7 +254,7 @@ int main() {
   //} /// END // INSTACING OBJS ON DEVICE
 
 
-  { /// AS BEFORE BUT ONE THREAD INST AND THE OTHER USE
+  { /// AS BEFORE BUT ONE KERNEL INST AND THE OTHER USE
     size_t pols_infos_size = sizeof(PolygonInfo)*pols.size();
     PolygonInfo *pols_infos = (PolygonInfo *) malloc(pols_infos_size);
     int i = 0;
@@ -274,9 +274,11 @@ int main() {
 
     free(pols_infos);
 
-    dim3 grids(1);
+    copy_kernel<<<1,1>>>(dev_pols_infos, pols.size());
+    HANDLE_ERROR(cudaDeviceSynchronize());
+    dim3 grids(3,3);
     dim3 threads(10,10);
-    kernel<<<grids,threads>>>(dev_pols_infos, pols.size());
+    kernel<<<grids,threads>>>();
   } /// END
 
   HANDLE_ERROR(cudaDeviceSynchronize());
